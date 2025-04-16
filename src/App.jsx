@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { tomorrow, dracula, okaidia, solarizedlight } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { saveAs } from 'file-saver'
 
 // Icons
 const DeleteIcon = () => (
@@ -110,6 +113,53 @@ const themes = {
   }
 };
 
+// Custom components for Markdown rendering
+const MarkdownComponents = {
+  code({ node, inline, className, children, ...props }) {
+    const match = /language-(\w+)/.exec(className || '')
+    const theme = {
+      slate: tomorrow,
+      monokai: okaidia,
+      dracula: dracula,
+      nord: solarizedlight
+    }
+    
+    return !inline && match ? (
+      <SyntaxHighlighter
+        style={theme[currentTheme] || tomorrow}
+        language={match[1]}
+        PreTag="div"
+        {...props}
+      >
+        {String(children).replace(/\n$/, '')}
+      </SyntaxHighlighter>
+    ) : (
+      <code className={`${className || ''} bg-gray-800/50 px-1 rounded text-sm`} {...props}>
+        {children}
+      </code>
+    )
+  },
+  a({ node, className, children, ...props }) {
+    // Check if link is a GitHub URL
+    const isGitHubLink = props.href && props.href.includes('github.com')
+    return (
+      <a 
+        className={`${className || ''} ${isGitHubLink ? 'flex items-center gap-1' : ''} text-blue-400 hover:underline`} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        {...props}
+      >
+        {isGitHubLink && (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+          </svg>
+        )}
+        {children}
+      </a>
+    )
+  }
+}
+
 function App() {
   const [tasks, setTasks] = useState([])
   const [newTask, setNewTask] = useState('')
@@ -131,6 +181,10 @@ function App() {
   const [showThemeSelector, setShowThemeSelector] = useState(false)
   const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(false)
   const inputRef = useRef(null)
+  const [importance, setImportance] = useState('medium')
+  const [urgency, setUrgency] = useState('medium')
+  const [viewMode, setViewMode] = useState('list') // list, kanban, matrix
+  const [fileInput, setFileInput] = useState(null)
   
   // Active theme
   const theme = themes[currentTheme];
@@ -149,6 +203,8 @@ function App() {
           category: 'Product',
           dueDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
           priority: 'high',
+          importance: 'high',
+          urgency: 'high',
           createdAt: new Date().toISOString(),
           description: '- Review user feedback\n- Prioritize by impact vs effort\n- Update roadmap accordingly'
         },
@@ -159,6 +215,8 @@ function App() {
           category: 'Development',
           dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
           priority: 'medium',
+          importance: 'high',
+          urgency: 'low',
           createdAt: new Date().toISOString(),
           description: '```js\n// TODO: Implement token refresh\nfunction refreshToken() {\n  // Add implementation\n}\n```'
         },
@@ -169,8 +227,22 @@ function App() {
           category: 'Meetings',
           dueDate: new Date(Date.now() - 86400000).toISOString().split('T')[0],
           priority: 'low',
+          importance: 'medium',
+          urgency: 'medium',
           createdAt: new Date().toISOString(),
           description: 'Discuss:\n- New design system\n- Component library\n- Mobile responsiveness'
+        },
+        {
+          id: 4,
+          text: 'Review GitHub issues',
+          completed: false,
+          category: 'Development',
+          dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+          priority: 'medium',
+          importance: 'low',
+          urgency: 'high',
+          createdAt: new Date().toISOString(),
+          description: 'Check issues at [GitHub](https://github.com/msk-robin/taskFork/issues)'
         }
       ]
       setTasks(sampleTasks)
@@ -255,6 +327,8 @@ function App() {
             category: newCategory,
             dueDate: dueDate,
             priority: priority,
+            importance: importance,
+            urgency: urgency,
             description: currentTask.description || ''
           } : task
         )
@@ -271,6 +345,8 @@ function App() {
           category: newCategory,
           dueDate: dueDate,
           priority: priority,
+          importance: importance,
+          urgency: urgency,
           createdAt: new Date().toISOString(),
           description: ''
         }
@@ -283,6 +359,8 @@ function App() {
       setNewCategory('')
       setDueDate('')
       setPriority('medium')
+      setImportance('medium')
+      setUrgency('medium')
     }
   }
 
@@ -303,6 +381,8 @@ function App() {
     setNewCategory(task.category)
     setDueDate(task.dueDate || '')
     setPriority(task.priority)
+    setImportance(task.importance || 'medium')
+    setUrgency(task.urgency || 'medium')
     setEditMode(true)
     setTimeout(() => inputRef.current?.focus(), 100)
   }
@@ -360,6 +440,14 @@ function App() {
         const priorityOrder = { high: 3, medium: 2, low: 1 }
         return priorityOrder[b.priority] - priorityOrder[a.priority]
       }
+      if (sortBy === 'importance') {
+        const importanceOrder = { high: 3, medium: 2, low: 1 }
+        return importanceOrder[b.importance || 'medium'] - importanceOrder[a.importance || 'medium']
+      }
+      if (sortBy === 'urgency') {
+        const urgencyOrder = { high: 3, medium: 2, low: 1 }
+        return urgencyOrder[b.urgency || 'medium'] - urgencyOrder[a.urgency || 'medium']
+      }
       if (sortBy === 'due') {
         if (!a.dueDate) return 1
         if (!b.dueDate) return -1
@@ -377,6 +465,55 @@ function App() {
     setShowThemeSelector(prev => !prev);
     setShowWorkspaceSelector(false); // Close workspace selector when theme selector opens
   };
+
+  // Export tasks to JSON
+  const exportTasks = () => {
+    try {
+      const exportData = {
+        tasks: tasks,
+        workspace: workspace,
+        timestamp: new Date().toISOString()
+      }
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {type: "application/json"})
+      saveAs(blob, `taskfork-${workspace}-${new Date().toISOString().slice(0,10)}.json`)
+      showTaskNotification("Tasks exported successfully")
+    } catch (error) {
+      console.error("Export failed:", error)
+      showTaskNotification("Export failed: " + error.message)
+    }
+  }
+
+  // Import tasks from JSON
+  const importTasks = (event) => {
+    try {
+      const file = event.target.files[0]
+      if (!file) return
+
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result)
+          if (Array.isArray(data.tasks)) {
+            if (window.confirm(`Import ${data.tasks.length} tasks? This will replace your current tasks.`)) {
+              setTasks(data.tasks)
+              showTaskNotification(`Imported ${data.tasks.length} tasks successfully`)
+            }
+          } else {
+            throw new Error("Invalid task data format")
+          }
+        } catch (parseError) {
+          console.error("Parsing failed:", parseError)
+          showTaskNotification("Import failed: Invalid JSON format")
+        }
+      }
+      reader.readAsText(file)
+    } catch (error) {
+      console.error("Import failed:", error)
+      showTaskNotification("Import failed: " + error.message)
+    }
+    // Reset file input
+    if (fileInput) fileInput.value = ''
+  }
 
   return (
     <div className={`min-h-screen ${theme.bg} ${theme.text}`}>
@@ -524,6 +661,30 @@ function App() {
               </select>
             </div>
 
+            <div className="md:col-span-2">
+              <select
+                value={importance}
+                onChange={(e) => setImportance(e.target.value)}
+                className={`w-full ${theme.input} ${theme.text} px-4 py-3 rounded-lg border ${theme.focusRing} transition-all duration-200`}
+              >
+                <option value="low">Low Importance</option>
+                <option value="medium">Medium Importance</option>
+                <option value="high">High Importance</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <select
+                value={urgency}
+                onChange={(e) => setUrgency(e.target.value)}
+                className={`w-full ${theme.input} ${theme.text} px-4 py-3 rounded-lg border ${theme.focusRing} transition-all duration-200`}
+              >
+                <option value="low">Low Urgency</option>
+                <option value="medium">Medium Urgency</option>
+                <option value="high">High Urgency</option>
+              </select>
+            </div>
+
             <div className="md:col-span-2 flex gap-2">
               <button
                 type="submit"
@@ -564,150 +725,248 @@ function App() {
             <option value="date">Sort by Date Added</option>
             <option value="priority">Sort by Priority</option>
             <option value="due">Sort by Due Date</option>
+            <option value="importance">Sort by Importance</option>
+            <option value="urgency">Sort by Urgency</option>
           </select>
+          
+          <select
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value)}
+            className={`flex-1 ${theme.input} ${theme.text} px-4 py-2 rounded-lg border ${theme.focusRing} transition-all duration-200`}
+          >
+            <option value="list">List View</option>
+            <option value="matrix">Matrix View</option>
+          </select>
+
+          <div className="flex gap-2">
+            <button 
+              onClick={exportTasks} 
+              className={`px-4 py-2 ${theme.card} rounded-lg hover:${theme.border.replace('border-', 'bg-')} transition-colors`}
+              title="Export tasks as JSON"
+            >
+              Export
+            </button>
+            
+            <label 
+              className={`px-4 py-2 ${theme.card} rounded-lg hover:${theme.border.replace('border-', 'bg-')} transition-colors cursor-pointer`}
+              title="Import tasks from JSON"
+            >
+              Import
+              <input 
+                type="file" 
+                accept=".json" 
+                className="hidden" 
+                onChange={importTasks}
+                ref={ref => setFileInput(ref)}
+              />
+            </label>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          {filteredAndSortedTasks.map(task => (
-            <div key={task.id} className="space-y-1">
-              <div
-                className={`${theme.card} backdrop-blur-sm rounded-lg p-4 flex items-center gap-4 border-l-4 ${getPriorityColor(task.priority)} transition-all duration-200 hover:bg-slate-750 border ${theme.border}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={task.completed}
-                  onChange={() => toggleTask(task.id)}
-                  className="w-5 h-5 rounded-md border-2 border-slate-500 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-slate-800"
-                />
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpandTask(task.id)}>
-                  <h3 className={`text-base font-medium truncate ${
-                    task.completed ? 'line-through text-slate-500' : theme.text
-                  }`}>
-                    {task.text}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-2 mt-1">
-                    <span className={`px-2 py-1 rounded-md text-xs font-medium ${
-                      task.priority === 'high' ? 'bg-rose-500/10 text-rose-400' :
-                      task.priority === 'medium' ? 'bg-amber-500/10 text-amber-400' :
-                      'bg-emerald-500/10 text-emerald-400'
+        {/* Task Views */}
+        {viewMode === 'list' ? (
+          // List View
+          <div className="space-y-3">
+            {filteredAndSortedTasks.map(task => (
+              <div key={task.id} className="space-y-1">
+                <div
+                  className={`${theme.card} backdrop-blur-sm rounded-lg p-4 flex items-center gap-4 border-l-4 ${getPriorityColor(task.priority)} transition-all duration-200 hover:bg-slate-750 border ${theme.border}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={task.completed}
+                    onChange={() => toggleTask(task.id)}
+                    className="w-5 h-5 rounded-md border-2 border-slate-500 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-slate-800"
+                  />
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleExpandTask(task.id)}>
+                    <h3 className={`text-base font-medium truncate ${
+                      task.completed ? 'line-through text-slate-500' : theme.text
                     }`}>
-                      {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
-                    </span>
-                    <span className="bg-slate-700/70 px-2 py-1 rounded-md text-xs text-slate-300">
-                      {task.category}
-                    </span>
-                    {task.dueDate && (
-                      <span className={`flex items-center gap-1 text-xs ${
-                        new Date(task.dueDate) < new Date() && !task.completed 
-                          ? 'text-rose-400' 
-                          : 'text-slate-400'
+                      {task.text}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className={`px-2 py-1 rounded-md text-xs font-medium ${
+                        task.priority === 'high' ? 'bg-rose-500/10 text-rose-400' :
+                        task.priority === 'medium' ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-emerald-500/10 text-emerald-400'
                       }`}>
-                        <CalendarIcon />
-                        {new Date(task.dueDate).toLocaleDateString()}
+                        {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
                       </span>
-                    )}
+                      <span className="bg-slate-700/70 px-2 py-1 rounded-md text-xs text-slate-300">
+                        {task.category}
+                      </span>
+                      {task.dueDate && (
+                        <span className={`flex items-center gap-1 text-xs ${
+                          new Date(task.dueDate) < new Date() && !task.completed 
+                            ? 'text-rose-400' 
+                            : 'text-slate-400'
+                        }`}>
+                          <CalendarIcon />
+                          {new Date(task.dueDate).toLocaleDateString()}
+                        </span>
+                      )}
+                      {task.importance && task.urgency && (
+                        <span className="flex items-center gap-1 text-xs text-slate-400">
+                          Matrix: {task.importance.charAt(0).toUpperCase()}/{task.urgency.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => editTask(task)}
+                      className="p-2 text-slate-400 hover:text-cyan-400 hover:bg-cyan-400/10 rounded-lg transition-colors duration-200"
+                    >
+                      <EditIcon />
+                    </button>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 rounded-lg transition-colors duration-200"
+                    >
+                      <DeleteIcon />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => editTask(task)}
-                    className="p-2 text-slate-400 hover:text-cyan-400 hover:bg-cyan-400/10 rounded-lg transition-colors duration-200"
-                  >
-                    <EditIcon />
-                  </button>
-                  <button
-                    onClick={() => deleteTask(task.id)}
-                    className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 rounded-lg transition-colors duration-200"
-                  >
-                    <DeleteIcon />
-                  </button>
-                </div>
-              </div>
 
-              {expandedTask === task.id && (
-                <div className={`${theme.card} rounded-lg p-4 border ${theme.border} mt-1`}>
-                  <textarea
-                    value={task.description}
-                    onChange={(e) => updateTaskDescription(task.id, e.target.value)}
-                    placeholder="Add Markdown description here... Use ```code``` for code blocks, * for lists, etc."
-                    className={`w-full mb-3 ${theme.input} ${theme.text} px-4 py-2 rounded-lg border ${theme.focusRing} transition-all duration-200 h-32`}
-                  />
-                  {task.description && (
-                    <div className={`${theme.input} rounded-lg p-4 prose prose-sm prose-invert max-w-none`}>
-                      <ReactMarkdown>
-                        {task.description}
-                      </ReactMarkdown>
+                {expandedTask === task.id && (
+                  <div className={`${theme.card} rounded-lg p-4 border ${theme.border} mt-1`}>
+                    <textarea
+                      value={task.description}
+                      onChange={(e) => updateTaskDescription(task.id, e.target.value)}
+                      placeholder="Add Markdown description here... Use ```code``` for code blocks, * for lists, etc."
+                      className={`w-full mb-3 ${theme.input} ${theme.text} px-4 py-2 rounded-lg border ${theme.focusRing} transition-all duration-200 h-32`}
+                    />
+                    {task.description && (
+                      <div className={`${theme.input} rounded-lg p-4 prose prose-invert max-w-none`}>
+                        <ReactMarkdown components={MarkdownComponents}>
+                          {task.description}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {filteredAndSortedTasks.length === 0 && (
+              <div className={`text-center py-12 ${theme.card} backdrop-blur-sm rounded-xl border ${theme.border}`}>
+                <p className="text-slate-400">No tasks found</p>
+                <p className="text-sm text-slate-500 mt-1">Time to add some structure to your day</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          // Eisenhower Matrix View
+          <div className={`grid grid-cols-2 gap-4 mb-8`}>
+            {/* Quadrant Headers */}
+            <div className="col-span-2 grid grid-cols-2 gap-4 mb-2">
+              <div className="col-start-2 text-center font-medium text-slate-300">Urgent</div>
+              <div className="col-start-2 text-center font-medium text-slate-300">Not Urgent</div>
+            </div>
+            
+            {/* Row 1: Important */}
+            <div className="row-span-2 flex items-center justify-center">
+              <div className="transform -rotate-90 text-slate-300 font-medium">Important</div>
+            </div>
+            
+            {/* Q1: Important & Urgent */}
+            <div className={`${theme.card} rounded-lg p-4 border-2 border-rose-500/30 min-h-[200px] max-h-[300px] overflow-y-auto`}>
+              <h3 className="text-rose-400 mb-3 font-medium border-b border-rose-500/30 pb-1">Do First</h3>
+              {filteredAndSortedTasks
+                .filter(task => task.importance === 'high' && task.urgency === 'high' && !task.completed)
+                .map(task => (
+                  <div key={task.id} className="mb-2 p-2 bg-rose-500/5 rounded">
+                    <div className="flex gap-2 items-start">
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => toggleTask(task.id)}
+                        className="mt-1 w-4 h-4 rounded-sm border-2 border-slate-500 text-rose-500"
+                      />
+                      <div onClick={() => editTask(task)} className="cursor-pointer flex-1">
+                        <div className="font-medium text-sm">{task.text}</div>
+                        <div className="text-xs text-slate-400">{task.category}</div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                ))}
             </div>
-          ))}
-          
-          {filteredAndSortedTasks.length === 0 && (
-            <div className={`text-center py-12 ${theme.card} backdrop-blur-sm rounded-xl border ${theme.border}`}>
-              <p className="text-slate-400">No tasks found</p>
-              <p className="text-sm text-slate-500 mt-1">Time to add some structure to your day</p>
+            
+            {/* Q2: Important & Not Urgent */}
+            <div className={`${theme.card} rounded-lg p-4 border-2 border-blue-500/30 min-h-[200px] max-h-[300px] overflow-y-auto`}>
+              <h3 className="text-blue-400 mb-3 font-medium border-b border-blue-500/30 pb-1">Schedule</h3>
+              {filteredAndSortedTasks
+                .filter(task => task.importance === 'high' && task.urgency === 'low' && !task.completed)
+                .map(task => (
+                  <div key={task.id} className="mb-2 p-2 bg-blue-500/5 rounded">
+                    <div className="flex gap-2 items-start">
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => toggleTask(task.id)}
+                        className="mt-1 w-4 h-4 rounded-sm border-2 border-slate-500 text-blue-500"
+                      />
+                      <div onClick={() => editTask(task)} className="cursor-pointer flex-1">
+                        <div className="font-medium text-sm">{task.text}</div>
+                        <div className="text-xs text-slate-400">{task.category}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
             </div>
-          )}
-        </div>
+            
+            {/* Row 2: Not Important */}
+            <div className="row-span-2 flex items-center justify-center">
+              <div className="transform -rotate-90 text-slate-300 font-medium">Not Important</div>
+            </div>
+            
+            {/* Q3: Not Important & Urgent */}
+            <div className={`${theme.card} rounded-lg p-4 border-2 border-yellow-500/30 min-h-[200px] max-h-[300px] overflow-y-auto`}>
+              <h3 className="text-yellow-400 mb-3 font-medium border-b border-yellow-500/30 pb-1">Delegate</h3>
+              {filteredAndSortedTasks
+                .filter(task => task.importance === 'low' && task.urgency === 'high' && !task.completed)
+                .map(task => (
+                  <div key={task.id} className="mb-2 p-2 bg-yellow-500/5 rounded">
+                    <div className="flex gap-2 items-start">
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => toggleTask(task.id)}
+                        className="mt-1 w-4 h-4 rounded-sm border-2 border-slate-500 text-yellow-500"
+                      />
+                      <div onClick={() => editTask(task)} className="cursor-pointer flex-1">
+                        <div className="font-medium text-sm">{task.text}</div>
+                        <div className="text-xs text-slate-400">{task.category}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+            
+            {/* Q4: Not Important & Not Urgent */}
+            <div className={`${theme.card} rounded-lg p-4 border-2 border-green-500/30 min-h-[200px] max-h-[300px] overflow-y-auto`}>
+              <h3 className="text-green-400 mb-3 font-medium border-b border-green-500/30 pb-1">Eliminate</h3>
+              {filteredAndSortedTasks
+                .filter(task => task.importance === 'low' && task.urgency === 'low' && !task.completed)
+                .map(task => (
+                  <div key={task.id} className="mb-2 p-2 bg-green-500/5 rounded">
+                    <div className="flex gap-2 items-start">
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => toggleTask(task.id)}
+                        className="mt-1 w-4 h-4 rounded-sm border-2 border-slate-500 text-green-500"
+                      />
+                      <div onClick={() => editTask(task)} className="cursor-pointer flex-1">
+                        <div className="font-medium text-sm">{task.text}</div>
+                        <div className="text-xs text-slate-400">{task.category}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
         {showNotification && (
-          <div className={`fixed bottom-8 right-8 ${theme.primary} text-white px-6 py-3 rounded-lg shadow-lg animate-slide-in flex items-center`}>
-            {notificationMessage}
-          </div>
-        )}
-
-        {showShortcuts && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className={`${theme.card} rounded-xl p-6 max-w-lg w-full border ${theme.border} shadow-2xl`}>
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Keyboard Shortcuts</h2>
-                <button onClick={() => setShowShortcuts(false)} className="text-gray-400 hover:text-gray-300">
-                  &times;
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="col-span-2 border-b border-gray-700 pb-2 mb-2">
-                  <h3 className="text-gray-300 font-medium">Navigation & Controls</h3>
-                </div>
-
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-gray-400">Show shortcuts</span>
-                  <span className="px-2 py-1 rounded bg-gray-700/50 text-xs text-gray-300">?</span>
-                </div>
-
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-gray-400">Close dialogs</span>
-                  <span className="px-2 py-1 rounded bg-gray-700/50 text-xs text-gray-300">Esc</span>
-                </div>
-
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-gray-400">Add task</span>
-                  <span className="px-2 py-1 rounded bg-gray-700/50 text-xs text-gray-300">Ctrl+Enter</span>
-                </div>
-
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-gray-400">Toggle theme</span>
-                  <span className="px-2 py-1 rounded bg-gray-700/50 text-xs text-gray-300">Ctrl+Shift+T</span>
-                </div>
-
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-gray-400">Show/hide shortcuts</span>
-                  <span className="px-2 py-1 rounded bg-gray-700/50 text-xs text-gray-300">Ctrl+K</span>
-                </div>
-              </div>
-
-              <p className="mt-4 text-sm text-gray-400">
-                More shortcuts coming soon. I know you love keyboard-based workflows!
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-export default App
+          <div className={`
