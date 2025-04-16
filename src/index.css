@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Add custom styles after Tailwind import */
+body {
+  min-height: 100vh;
+  background-color: #1a202c; /* Fallback in case Tailwind classes don't load */
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2d3748;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
